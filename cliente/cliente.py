@@ -1,7 +1,7 @@
-import xmlrpc.client
-import threading
-import time
+import xmlrpc.client, threading, time, sys, os
 from datetime import datetime
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils import limpar_console
 
 class ClienteChat:
     def __init__(self, enderecoBinder):
@@ -34,6 +34,7 @@ class ClienteChat:
                 break
 
     def criar_sala(self):
+        limpar_console()
         # Cria uma nova sala com um nome único
         nomeSala = input("Digite o nome da sala: ").strip()
         sucesso, mensagem = self.servidor.criar_sala(nomeSala)
@@ -75,6 +76,7 @@ class ClienteChat:
     def listar_salas(self):
         # Lista todas as salas disponíveis
         try:
+            limpar_console()
             sucesso, salas = self.servidor.listar_salas()
             if sucesso:
                 print("Salas disponíveis:")

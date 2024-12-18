@@ -4,15 +4,31 @@ from xmlrpc.server import SimpleXMLRPCRequestHandler
 from datetime import datetime, timedelta
 import threading, json, logging
 
+# Configuração do logging
+try:
+    logging.basicConfig(
+        filename="chat_server.log",
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logging.info("Iniciando o servidor de chat...")
+except Exception as e:
+    print(f"Erro ao configurar o logging: {e}")
+
 class ServidorChat:
     def __init__(self):
-        # Estruturas de dados para gerenciar usuários, salas e inatividade
-        self.usuarios = {}  # {nomeUsuario: nomeSala}
-        self.salas = {}  # {nomeSala: {"usuarios": [], "mensagens": []}}
-        self.salasInativas = {}  # {nomeSala: timestampUltimaAtividade}
-        self.arquivoUsuarios = "usuarios.json"  # Nome do arquivo JSON
-        self.trava = threading.Lock()  # Inicializa a trava
-        self.limpar_arquivo_usuarios()  # Esvazia o arquivo ao iniciar
+        try:
+            # Estruturas de dados para gerenciar usuários, salas e inatividade
+            self.usuarios = {}  # {nomeUsuario: nomeSala}
+            self.salas = {}  # {nomeSala: {"usuarios": [], "mensagens": []}}
+            self.salasInativas = {}  # {nomeSala: timestampUltimaAtividade}
+            self.arquivoUsuarios = "usuarios.json"  # Nome do arquivo JSON
+            self.trava = threading.Lock()  # Inicializa a trava
+            self.limpar_arquivo_usuarios()  # Esvazia o arquivo ao iniciar
+            logging.info("ServidorChat: Inicializando estruturas de dados...")
+        except Exception as e:
+            logging.critical(f"Erro ao inicializar servidor: {str(e)}")
 
     def limpar_arquivo_usuarios(self):
         # Esvazia o arquivo JSON ao iniciar o servidor
@@ -38,7 +54,7 @@ class ServidorChat:
     def registrar_usuario(self, nomeUsuario):
         # Registra um novo usuário, verificando se já existe
         if nomeUsuario in self.carregar_usuarios():
-            logging.info(f"Tentativa de registro de nome duplicado: {nomeUsuario}")
+            logging.warning(f"Tentativa de registro de nome duplicado: {nomeUsuario}")
             return False, "Nome de usuário já está em uso."
         self.salvar_usuario(nomeUsuario)
         self.usuarios[nomeUsuario] = None
@@ -50,8 +66,10 @@ class ServidorChat:
         # Cria uma nova sala
         with self.trava:
             if nomeSala in self.salas:
+                logging.warning(f"Tentativa de criação de sala duplicada: {nomeSala}")
                 return False, "O nome da sala já existe."
             self.salas[nomeSala] = {"usuarios": [], "mensagens": []}
+            logging.info(f"Sala criada: {nomeSala}")
             return True, f"Sala '{nomeSala}' criada com sucesso."
 
     def entrar_na_sala(self, nomeUsuario, nomeSala):
@@ -61,7 +79,7 @@ class ServidorChat:
                 return False, "Usuário não registrado."
             if nomeSala not in self.salas:
                 return False, "Sala não encontrada."
-            
+
             # Remove o usuário de outra sala, se necessário
             if self.usuarios[nomeUsuario]:
                 self.sair_da_sala(nomeUsuario)
@@ -76,6 +94,7 @@ class ServidorChat:
                 "conteudo": f"{nomeUsuario} entrou na sala.",
                 "timestamp": datetime.now()
             })
+            logging.info(f"Usuário '{nomeUsuario}' entrou na sala '{nomeSala}'.")
 
             # Retorna os dados da sala
             usuariosNaSala = self.salas[nomeSala]["usuarios"]
@@ -99,6 +118,7 @@ class ServidorChat:
                 "conteudo": f"{nomeUsuario} saiu da sala.",
                 "timestamp": datetime.now()
             })
+            logging.info(f"Usuário '{nomeUsuario}' saiu da sala '{nomeSala}'.")
 
             # Marca a sala para remoção se estiver vazia
             if not self.salas[nomeSala]["usuarios"]:
@@ -112,7 +132,7 @@ class ServidorChat:
         with self.trava:
             if nomeUsuario not in self.usuarios or self.usuarios[nomeUsuario] != nomeSala:
                 return False, "Usuário não está na sala especificada."
-            
+
             mensagemDados = {
                 "tipo": "unicast" if destinatario else "broadcast",
                 "origem": nomeUsuario,
@@ -128,6 +148,8 @@ class ServidorChat:
                 mensagemDados["destino"] = "todos"
 
             self.salas[nomeSala]["mensagens"].append(mensagemDados)
+            logging.info(f"Mensagem enviada por '{nomeUsuario}' na sala '{nomeSala}'.")
+
             return True, "Mensagem enviada com sucesso."
 
     def receber_mensagens(self, nomeUsuario, nomeSala):
@@ -162,10 +184,10 @@ class ServidorChat:
             with self.trava:
                 agora = datetime.now()
                 for sala, ultimaAtividade in list(self.salasInativas.items()):
-                    if agora - ultimaAtividade > timedelta(minutes=5):
+                    if agora - ultimaAtividade > timedelta(minutes=1):
                         del self.salas[sala]
                         del self.salasInativas[sala]
-                        print(f"Sala '{sala}' removida por inatividade.")
+                        logging.info(f"Sala '{sala}' removida por inatividade.")
             threading.Event().wait(60)  # Espera 60 segundos antes da próxima verificação
 
 
@@ -177,6 +199,7 @@ if __name__ == "__main__":
 
     # Registra no Binder
     sucesso, mensagem = binder.registrar_procedimento(nomeProcedimento, endereco, porta)
+    logging.info(mensagem)
     print(mensagem)
 
     if sucesso:
@@ -188,5 +211,6 @@ if __name__ == "__main__":
         threadLimpeza = threading.Thread(target=servidor.instance.limpar_salas_inativas, daemon=True)
         threadLimpeza.start()
 
+        logging.info(f"Servidor de chat rodando em {endereco}:{porta}...")
         print(f"Servidor de chat rodando em {endereco}:{porta}...")
         servidor.serve_forever()
